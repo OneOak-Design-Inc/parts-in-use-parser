@@ -1,8 +1,9 @@
 # altium-parts-in-use-parser
 
 A small, standalone, offline Python tool for inspecting a manually downloaded
-Altium 365 BOM Portal **Parts in Use** CSV. One script, standard library only at
-runtime, Python 3.11 or newer. It does not depend on Altium Designer, Altium Develop,
+Altium 365 BOM Portal **Parts in Use** CSV. A small CLI and optional Excel-report
+module use only the standard library at runtime, Python 3.11 or newer.
+It does not depend on Altium Designer, Altium Develop,
 API enrollment, or the separate altium-workspace-reporter project.
 
 ## Run
@@ -104,6 +105,7 @@ one Description empty. They do not establish historical metadata snapshots.
 | `manufacturer_fields.csv` | Inspect primary and populated numbered manufacturer/MPN fields in consistent columns, without deduplicating or splitting MPN lists. |
 | `usage.csv` | One row per displayed usage line, with its original full `Used In` cell, CPN and source provenance. |
 | `summary.json` | Counts, empty/absent/whitespace-only fields, duplicate groups, source hash, format details, issues and interpretation limits. |
+| `parts_in_use.xlsx` (with `--excel`) | Requested part columns and board/variant count matrix, plus usage-detail and original-source sheets. |
 
 All CSV outputs are UTF-8, with standard CSV quoting. Original **cell values**
 are preserved, including spaces, leading zeroes, quoted commas, embedded quotes
@@ -136,7 +138,7 @@ distinct parts or Part Choices. A comma or newline in a numbered MPN cell produc
 formats preserve the raw value with blank extracted MPN and an explicit error.
 Conflicting manufacturer fields and incomplete pairs are also explicit errors.
 
-`usage.csv` separates only real CRLF/LF/CR newlines, preserving each label exactly.
+The CSV output `usage.csv` separates only real CRLF/LF/CR newlines, preserving each label exactly.
 It does not parse parentheses, designators, bracketed labels or literal `\n` text.
 Blank lines within a populated usage cell are retained and flagged. An empty or
 whitespace-only `Used In` cell produces no usage-line records; its source row is
@@ -193,13 +195,93 @@ Import-Csv .\reports\my-review\usage.csv |
 
 These are text filters, not identity joins. If opening a CSV in a spreadsheet,
 import identifier/MPN columns as text to keep that application's type conversion
-from removing leading zeroes. Excel workbook output is outside this milestone.
+from removing leading zeroes. With `--excel`, the workbook already stores these
+identifiers as text.
+
+## Excel board/variant report
+
+The owner requested and approved this layout after testing the CSV parser.
+Add `--excel` to also generate `parts_in_use.xlsx`:
+
+```powershell
+python .\parse_parts_in_use.py .\data\export.csv --output-dir .\reports\review-002 --backslash-escaped-quotes --excel
+```
+
+Update both `parse_parts_in_use.py` and `excel_report.py` in your local checkout.
+No additional package installation or running Excel application is required.
+The existing CSV/JSON files are still produced. Use a new output directory.
+
+The first sheet, **Parts in Use**, has two header rows. The fixed columns are:
+
+```text
+CPN, Description, Manufacturer 1, Lifecycle, MPN 1,
+Manufacturer 2, MPN 2, Manufacturer 3, MPN 3, Manufacturer 4, MPN 4
+```
+
+Each board name is merged across its variant columns in the first header row;
+variants are in the second row. The fixed column headings span both header rows.
+Header rows and the first two identifying columns remain visible when scrolling.
+Board/variant groups follow first appearance in the export. Each source record
+has its own report row: duplicate CPNs or repeated source rows are not merged.
+
+Manufacturer/MPN mapping, agreed with the owner:
+
+| Output | Export source |
+| --- | --- |
+| Manufacturer 1 / MPN 1 | `manufacturer:` / `part:` values extracted from the primary `Manufacturer Part Number` wrapper. |
+| Manufacturer 2 / MPN 2 | `Manufacturer 1` / `Manufacturer Part Number 1`. |
+| Manufacturer 3 / MPN 3 | `Manufacturer 2` / `Manufacturer Part Number 2`. |
+| Manufacturer 4 / MPN 4 | `Manufacturer 3` / `Manufacturer Part Number 3`. |
+
+The export's fourth numbered pair remains on **Source data**; populated overflow
+adds a warning. Comma-separated MPN cells remain intact. No preference ranking,
+identity matching, or deduplication is inferred.
+
+The usage split follows the supplied examples: the **final word** before the
+reference list is the variant, except a bracketed suffix such as
+`[No Variations]` stays together. All preceding text is the board name. Thus
+`Demo Control Board Default (R1,R2)` means board `Demo Control Board`, variant
+`Default`, and count 2. Board names can contain spaces. Unbracketed variant names
+containing spaces cannot be distinguished with this rule and require new examples
+and an explicit mapping rule before use. These names remain display labels, not
+verified Workspace project, release or revision identifiers.
+
+Counts are the number of nonempty comma-separated reference tokens in one
+source row's board/variant entry. Surrounding whitespace in tokens is ignored
+only for counting; original text is retained. Ranges are not expanded. Empty
+lists, repeated reference tokens, whitespace-separated references, unrecognized
+usage syntax, malformed source rows and repeated entries for the same board and
+variant are flagged. Repeated entries are not silently summed, since the export
+does not establish whether they represent distinct designs, duplicate labels or
+overlapping lists.
+
+- A number is a count of **listed reference designators**, not verified fitted
+  quantity, production demand or a sum across mutually exclusive variants.
+- A blank means there was no usable exported entry for that row/column; it is
+  **not confirmed zero usage**.
+- `REVIEW` means invalid or ambiguous data prevents assigning a reliable count.
+  See `summary.json` and **Usage details** for the affected source record.
+
+**Usage details** retains each original usage line with the interpreted board,
+variant, reference list, per-line count and status. **Source data** retains every
+original column/value, source record and line range, plus the corresponding main
+report row number. This includes `Internal Part Number`, overflow manufacturer
+fields and unexpected columns. The source filename, hash and count definitions
+appear there once. Very long source cells remain complete; Excel row-height
+limits may require inspecting the cell contents in the formula bar.
+
+Counts are static results of this run; regenerate the report after changing the
+CSV. The report does not use workbook formulas to reinterpret edited source cells.
+Excel-incompatible control characters, strings over Excel's cell text limit, or
+worksheet-size limits fail before any output files are written. Values are never
+silently truncated. Excel-specific data issues are included in `summary.json`
+and in the CLI error/warning totals; error-severity issues produce exit code 2.
 
 ## Validation and remaining uncertainty
 
 On 2026-11-24:
 
-- **40 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
+- **58 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
   both observed field layouts, reordered/extra columns, leading zeroes, spaces,
   quoted commas/doubled quotes, multiline and large cells, explicit encodings,
   missing/blank values, malformed widths, duplicate rows, unsafe headers, invalid
@@ -214,11 +296,27 @@ On 2026-11-24:
   16-column structure, multiline usage and an inch-mark-style quote; tests also
   cover mixed quote styles, preservation of unrelated backslashes and literal
   backslash-n text, unchanged source bytes, output round-trip values, and strict
-  rejection of malformed quoting with the option enabled.
+  rejection of malformed quoting with the option enabled. Excel tests cover
+  merged board/variant headers, multiword boards, bracketed variants, manufacturer
+  mapping/overflow, numeric counts, missing versus zero, repeated/invalid usage,
+  source traceability, text identifiers, literal leading `=`, CRLF preservation,
+  more than 26 columns, cell limits, output protection, backslash-quoted input,
+  and execution with site packages disabled.
 - The owner reported that a second export has an empty first column. Support for
   that structure was verified with synthetic data, including a UTF-8 BOM and
   multiline usage cells. That second real export is not available in this checkout
-  and has not yet been rerun here.
+  and has not yet been rerun here. The owner subsequently reported a successful
+  CSV run with 209 source records, 215 manufacturer-field records, 1,432 usage
+  label lines, zero errors and two warnings. These are user-reported results;
+  the warnings and counts have not been independently compared with that file.
+- A synthetic three-part Excel example was generated locally. All three sheets
+  were rendered and visually reviewed with Artifact Tool. Merged ranges, numeric
+  counts, text identifiers/leading zeroes, missing cells and freeze panes were
+  independently read back with openpyxl (validation only, no runtime dependency).
+  The preview engine required a display-only workaround for leading-zero text;
+  the delivered workbook's stored strings and types were verified separately.
+  No native Excel application validation or full real-export Excel comparison
+  has been performed.
 - **The supplied real sample ran on Python 3.14.6 with site packages disabled.**
   It produced two cleaned rows, three manufacturer-field records and nine usage
   label lines, with zero error issues and one ambiguous-MPN warning. There were
@@ -250,7 +348,7 @@ python -m venv .venv
 
 The Codex sandbox's default temporary directory was unavailable during validation.
 The latest successful full-suite run used
-`--basetemp=reports/pytest-quote-style-check-2` after
+`--basetemp=reports/pytest-excel-check-4` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 

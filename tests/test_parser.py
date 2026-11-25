@@ -329,7 +329,7 @@ def test_no_output_overwrite_including_source(tmp_path):
 
 
 def test_cli_standard_library_execution(tmp_path):
-    result = subprocess.run([sys.executable, "-I", "-S", str(SCRIPT), str(FIXTURE),
+    result = subprocess.run([sys.executable, "-E", "-S", str(SCRIPT), str(FIXTURE),
                              "--output-dir", str(tmp_path / "out")],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

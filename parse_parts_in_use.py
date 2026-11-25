@@ -1,6 +1,7 @@
 """Offline parser for the observed Altium Parts in Use CSV. Python 3.11+."""
 
 import argparse
+import copy
 from collections import Counter
 import csv
 import hashlib
@@ -9,6 +10,8 @@ import json
 from pathlib import Path
 import re
 import sys
+
+from excel_report import ReportError, build_report, workbook_bytes
 
 
 CORE = ["Manufacturer Part Number", "Manufacturer", "CPN", "Used In",
@@ -247,13 +250,33 @@ def parse_export(source, encoding="utf-8-sig", backslash_escaped_quotes=False):
     return headers, records, manufacturer_fields, usage, summary
 
 
-def write_outputs(output_dir, parsed):
+def write_outputs(output_dir, parsed, excel=False):
     headers, records, manufacturer_fields, usage, summary = parsed
+    summary = copy.deepcopy(summary)
     output_dir = Path(output_dir)
     paths = [output_dir / name for name in OUTPUTS]
+    if excel:
+        paths.append(output_dir / "parts_in_use.xlsx")
     if any(p.exists() or p.is_symlink() for p in paths):
         raise InputError("Output files already exist. Choose a fresh output directory; "
                          "existing files are never overwritten.")
+    if excel:
+        report = build_report(parsed)
+        xlsx = workbook_bytes(report)  # Validate Excel limits before writing any outputs.
+        summary["issues"].extend(report["issues"])
+        for severity in ("error", "warning"):
+            summary["counts"][f"{severity}_issues"] = sum(
+                issue["severity"] == severity for issue in summary["issues"])
+        summary["excel"] = {
+            "file": "parts_in_use.xlsx", "board_count": len(report["boards"]),
+            "variant_columns": len(report["columns"]), "part_rows": len(report["matrix"]),
+            "usage_label_rule": "Final token is variant; a final bracketed suffix stays together. "
+                                "All preceding text is the board name.",
+            "manufacturer_mapping": "Primary wrapper -> pair 1; export numbered pairs 1-3 -> "
+                                    "pairs 2-4. Export pair 4 retained in Source data.",
+            "counts": "Comma-separated reference tokens per source row and exact board/variant "
+                      "label. Repeated or invalid entries are REVIEW. Missing entries are blank, "
+                      "not confirmed zero usage. These counts are not fitted quantities or demand."}
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def write_csv(path, columns, rows):
@@ -278,16 +301,22 @@ def write_outputs(output_dir, parsed):
     write_csv(paths[1], manufacturer_columns,
               ([r[c] for c in manufacturer_columns] for r in manufacturer_fields))
     write_csv(paths[2], usage_columns, ([r[c] for c in usage_columns] for r in usage))
+    if excel:
+        with paths[4].open("xb") as stream:
+            stream.write(xlsx)
     with paths[3].open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(summary, stream, indent=2, ensure_ascii=False)
         stream.write("\n")
+    return summary
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Observed Parts in Use CSV (read only)")
     parser.add_argument("--output-dir", type=Path, required=True,
-                        help="Directory for four new output files; existing files are refused")
+                        help="Directory for new output files; existing files are refused")
+    parser.add_argument("--excel", action="store_true",
+                        help="Also write an Excel matrix with grouped boards, variants and refdes counts")
     parser.add_argument("--encoding", default="utf-8-sig",
                         help="Known source encoding (default: utf-8-sig, strict decoding)")
     parser.add_argument("--backslash-escaped-quotes", action="store_true",
@@ -296,16 +325,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         parsed = parse_export(args.source, args.encoding, args.backslash_escaped_quotes)
-        write_outputs(args.output_dir, parsed)
-    except (OSError, InputError, UnicodeError) as exc:
+        summary = write_outputs(args.output_dir, parsed, args.excel)
+    except (OSError, InputError, ReportError, UnicodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    counts = parsed[-1]["counts"]
+    counts = summary["counts"]
     print(f"Read {counts['source_records']} source records; wrote "
           f"{counts['manufacturer_field_records']} manufacturer field records and "
           f"{counts['usage_label_lines']} usage label lines. "
           f"Issues: {counts['error_issues']} errors, {counts['warning_issues']} warnings. "
           "Review summary.json. Usage line counts are not quantities.")
+    if args.excel:
+        print("Wrote parts_in_use.xlsx. Excel counts are listed reference designators, "
+              "not fitted quantities or manufacturing demand.")
     return 2 if counts["error_issues"] else 0
 
 
