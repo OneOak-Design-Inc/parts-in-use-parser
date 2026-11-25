@@ -1,0 +1,5 @@
+Manufacturer Part Number,Manufacturer,CPN,Used In,Description,Lifecycle,Manufacturer 1,Manufacturer Part Number 1,Manufacturer 2,Manufacturer Part Number 2,Manufacturer 3,Manufacturer Part Number 3,Manufacturer 4,Manufacturer Part Number 4
+"part: 00123, manufacturer: Example Components",Example Components,00001,"Demo Board Alpha (C1,C2)
+Demo Board Beta [Demo Variant] (C3)","Synthetic capacitor, not real client data",Production,,,,,,,,
+,,00002,Demo Board Gamma (R1),Synthetic resistor,Unknown,Example Devices,000045,,,,,,
+"part: 00789, manufacturer: Example Devices",Example Devices,00003,Demo Board Delta (R2),,Unknown,Example Devices,"00789, 00790 ",,,,,,

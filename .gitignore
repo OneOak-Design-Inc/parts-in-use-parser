@@ -1,0 +1,13 @@
+# Confidential inputs and outputs (including the supplied sample).
+*.csv
+!tests/fixtures/synthetic.csv
+data/
+reports/
+*.xlsx
+*.xls
+*.json
+
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
