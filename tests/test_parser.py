@@ -161,7 +161,103 @@ def test_unclosed_quote_fails_before_outputs(tmp_path, capsys):
     output = tmp_path / "out"
     assert main([str(source), "--output-dir", str(output)]) == 1
     assert not output.exists()
-    assert "record beginning at physical line 3" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "record beginning at physical line 3" in error
+    assert "CSV reader: unexpected end of data" in error
+
+
+def test_multiline_csv_syntax_error_reports_reason_without_cell_values(tmp_path, capsys):
+    source = make_csv(tmp_path, [primary()])
+    with source.open("a", encoding="utf-8", newline="") as stream:
+        stream.write('"Confidential first line\nConfidential second line"x,Example Co\n')
+    before = source.read_bytes()
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output)]) == 1
+    error = capsys.readouterr().err
+    assert "record beginning at physical line 3; reader stopped at line 4" in error
+    assert "CSV reader: ',' expected after" in error
+    assert "Confidential" not in error
+    assert not output.exists()
+    assert source.read_bytes() == before
+
+
+def test_csv_header_syntax_error_reports_reason(tmp_path, capsys):
+    source = tmp_path / "input.csv"
+    source.write_text('"Manufacturer"x,CPN\n', encoding="utf-8")
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output)]) == 1
+    error = capsys.readouterr().err
+    assert "Invalid CSV header at physical line 1" in error
+    assert "CSV reader: ',' expected after" in error
+    assert not output.exists()
+
+
+def test_backslash_quote_export_preserves_columns_lines_and_source(tmp_path):
+    headers = [""] + CORE
+    headers.insert(4, "Internal Part Number")
+    values = dict(zip(CORE, primary(used_in="Demo Default (P1)\nDemo Other (P1)")))
+    values["Internal Part Number"] = "000003"
+    values["Description"] = 'Synthetic header 0.200" (demo), extra text'
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream, quoting=csv.QUOTE_ALL)
+    writer.writerow(headers)
+    writer.writerow([values.get(h, "") for h in headers])
+    raw_text = stream.getvalue().replace('0.200""', '0.200\\"')
+    source = tmp_path / "input.csv"
+    source.write_bytes(raw_text.encode("utf-8-sig"))
+    before = source.read_bytes()
+    with pytest.raises(InputError, match="CSV reader"):
+        parse_export(source)
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output),
+                 "--backslash-escaped-quotes"]) == 0
+    cleaned = read_csv(output / "cleaned.csv")
+    assert len(cleaned) == 1
+    assert [cleaned[0][h] for h in headers] == [values.get(h, "") for h in headers]
+    assert cleaned[0]["__piu_source_line_start"] == "2"
+    assert cleaned[0]["__piu_source_line_end"] == "3"
+    assert cleaned[0]["__piu_field_count"] == "8"
+    assert len(read_csv(output / "usage.csv")) == 2
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert summary["source"]["backslash_escaped_quotes"] is True
+    assert summary["source"]["backslash_quote_pairs_decoded"] == 1
+    assert summary["unexpected_columns"] == ["Internal Part Number"]
+    assert source.read_bytes() == before
+
+
+def test_backslash_quote_mode_preserves_literal_backslashes_and_doubled_quotes(tmp_path):
+    row = primary(mpn=r"00\123", used_in=r"Demo\nLabel (R1)")
+    row[4] = 'Synthetic "double quotes", ' + r'C:\parts\new\test and \\server\share'
+    source = make_csv(tmp_path, [row])
+    standard = parse_export(source)
+    explicit = parse_export(source, backslash_escaped_quotes=True)
+    assert explicit[:4] == standard[:4]
+    assert explicit[-1]["source"]["backslash_quote_pairs_decoded"] == 0
+
+
+def test_mixed_quote_styles_decode_only_inside_quoted_cells(tmp_path):
+    row = primary()
+    row[4] = 'Synthetic "standard" and "escaped", ' + r'C:\notes\n'
+    source = make_csv(tmp_path, [row], CORE + ["Extra"])
+    text = source.read_text(encoding="utf-8").replace('""escaped""', '\\"escaped\\"')
+    # A plain unquoted extra field must keep its backslash-quote pair literally.
+    text = text.rstrip("\n") + r',literal\"text' + "\n"
+    source.write_text(text, encoding="utf-8", newline="")
+    parsed = parse_export(source, backslash_escaped_quotes=True)
+    assert parsed[1][0]["fields"][-1] == r'literal\"text'
+    assert parsed[1][0]["fields"][4] == row[4]
+    assert parsed[-1]["counts"]["error_issues"] == 0
+
+
+@pytest.mark.parametrize("broken", ['"unclosed\\"', '"bad\\"quote"x,other'])
+def test_backslash_quote_mode_still_rejects_invalid_syntax(tmp_path, broken):
+    source = make_csv(tmp_path, [primary()])
+    with source.open("a", encoding="utf-8", newline="") as stream:
+        stream.write(broken)
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output),
+                 "--backslash-escaped-quotes"]) == 1
+    assert not output.exists()
 
 
 def test_duplicate_rows_stay_separate(tmp_path):

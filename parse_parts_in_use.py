@@ -24,7 +24,42 @@ class InputError(ValueError):
     """Input cannot be parsed without guessing boundaries or column meanings."""
 
 
-def parse_export(source, encoding="utf-8-sig"):
+def decode_backslash_quotes(text):
+    """Translate only backslash-quote pairs inside CSV quoted cells.
+
+    Using csv's general escapechar would also consume literal backslashes in
+    paths, identifiers and backslash-n strings. Leave those characters intact.
+    Standard doubled quotes remain supported, and line boundaries never change.
+    """
+    chunks = []
+    index = copied_until = replacements = 0
+    in_quotes = False
+    field_start = True
+    while index < len(text):
+        char = text[index]
+        if in_quotes:
+            if text.startswith('\\"', index):
+                chunks.extend((text[copied_until:index], '""'))
+                replacements += 1
+                index += 2
+                copied_until = index
+                continue
+            if char == '"':
+                if text.startswith('""', index):
+                    index += 2
+                    continue
+                in_quotes = False
+        elif char == '"' and field_start:
+            in_quotes = True
+            field_start = False
+        else:
+            field_start = char in ",\r\n"
+        index += 1
+    chunks.append(text[copied_until:])
+    return "".join(chunks), replacements
+
+
+def parse_export(source, encoding="utf-8-sig", backslash_escaped_quotes=False):
     """Read once, preserve strings, and return all output data before writing."""
     source = Path(source)
     raw = source.read_bytes()
@@ -35,14 +70,17 @@ def parse_export(source, encoding="utf-8-sig"):
                          "No replacement characters were inserted.") from exc
     # csv's default 128 KiB limit is too small for long usage lists.
     csv.field_size_limit(2**31 - 1)
-    reader = csv.reader(io.StringIO(text, newline=""), delimiter=",",
+    csv_text, quote_replacements = (decode_backslash_quotes(text)
+                                    if backslash_escaped_quotes else (text, 0))
+    reader = csv.reader(io.StringIO(csv_text, newline=""), delimiter=",",
                         quotechar='"', doublequote=True, strict=True)
     try:
         headers = next(reader)
     except StopIteration as exc:
         raise InputError("Input is empty.") from exc
     except csv.Error as exc:
-        raise InputError(f"Invalid CSV header at physical line {reader.line_num}.") from exc
+        raise InputError(f"Invalid CSV header at physical line {reader.line_num}. "
+                         f"CSV reader: {exc}. No outputs written.") from exc
     # The owner confirmed an export with an entirely empty first column.
     # Keep its blank header and cells; never assign it an invented meaning.
     empty_leading_column = bool(headers) and headers[0] == ""
@@ -92,6 +130,7 @@ def parse_export(source, encoding="utf-8-sig"):
         except csv.Error as exc:
             raise InputError(f"Invalid CSV in record beginning at physical line {start}; "
                              f"reader stopped at line {reader.line_num}. "
+                             f"CSV reader: {exc}. "
                              "Cannot safely recover record boundaries; no outputs written.") from exc
         if empty_leading_column and fields and fields[0] != "":
             raise InputError(f"Unnamed first column contains data in the record beginning "
@@ -178,6 +217,8 @@ def parse_export(source, encoding="utf-8-sig"):
                    "bytes": len(raw), "encoding_used": encoding,
                    "utf8_bom": raw.startswith(b"\xef\xbb\xbf"),
                    "delimiter": ",", "quotechar": '"', "headers": headers,
+                   "backslash_escaped_quotes": backslash_escaped_quotes,
+                   "backslash_quote_pairs_decoded": quote_replacements,
                    "crlf_count": text.count("\r\n"),
                    "bare_lf_count": text.count("\n") - text.count("\r\n"),
                    "bare_cr_count": text.count("\r") - text.count("\r\n")},
@@ -249,9 +290,12 @@ def main(argv=None):
                         help="Directory for four new output files; existing files are refused")
     parser.add_argument("--encoding", default="utf-8-sig",
                         help="Known source encoding (default: utf-8-sig, strict decoding)")
+    parser.add_argument("--backslash-escaped-quotes", action="store_true",
+                        help=r'Decode \" inside quoted cells; preserve other backslashes '
+                             '(use for the observed BOM Portal quote style)')
     args = parser.parse_args(argv)
     try:
-        parsed = parse_export(args.source, args.encoding)
+        parsed = parse_export(args.source, args.encoding, args.backslash_escaped_quotes)
         write_outputs(args.output_dir, parsed)
     except (OSError, InputError, UnicodeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

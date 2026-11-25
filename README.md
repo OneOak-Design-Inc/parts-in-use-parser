@@ -31,6 +31,21 @@ delimiter guessing occurs. For an independently known encoding, specify e.g.
 `--encoding cp1252`. Invalid bytes fail instead of being replaced. Only comma
 delimiters and the observed header names are supported in this milestone.
 
+For the later observed export style, where quotes inside descriptions are written
+as `\"`, select that style explicitly:
+
+```powershell
+python .\parse_parts_in_use.py .\data\export.csv --output-dir .\reports\review-001 --backslash-escaped-quotes
+```
+
+This option decodes only backslash-quote pairs **inside quoted cells** as literal
+quote characters. Standard doubled quotes still work. Other backslashes, file
+paths and literal `\n` strings remain intact. The mode and number of decoded pairs
+are recorded in `summary.json` under `source`. The input file remains unchanged;
+output uses standard CSV doubled-quote escaping. Because a backslash immediately
+before a quote can also be literal data in standard CSV, the tool never enables
+this interpretation automatically. Without the option, standard CSV rules apply.
+
 ## What the supplied export contains
 
 Inspection on 2026-11-24 found a 3,290-byte file, two data records and 14 headers.
@@ -66,6 +81,13 @@ pair. One H cell contains two comma-separated MPN strings and a trailing space.
 The meaning and membership of that list are not independently established.
 Numbered pairs 2–4 are empty in this sample. Parsing uses header names, so column
 order can change.
+
+A later header and record excerpt supplied in chat show 16 columns: the same
+named columns plus an empty unnamed first column and `Internal Part Number`.
+The latter is preserved as an additional text column, with no identity semantics
+assigned. A Description in that excerpt uses a backslash-escaped quote for an
+inch mark. That excerpt establishes the need for the explicit quote option;
+it does not establish the full file's encoding or completeness.
 
 `CPN` is preserved as exported text; this tool does not establish it as a stable
 managed Workspace component or revision identifier. `Used In` contains line-separated
@@ -131,6 +153,13 @@ Exit codes:
   Quoting errors are not recovered by guessing row boundaries. A filesystem error
   during output writing can leave partial outputs; use a fresh directory to retry.
 
+CSV syntax failures include the underlying reader's reason and physical line
+numbers without printing cell contents. A record can span multiple lines, so the
+record's starting line can differ from the line where parsing stops. Inspect the
+original header and the full affected record before changing quoting rules. For
+confidential data, provide a sanitized excerpt preserving commas, quotes and
+line breaks; do not remove arbitrary quotes or resave the original through Excel.
+
 An unnamed first column is accepted only when every present cell in that column
 is exactly empty. Its original blank header and empty cells remain in
 `cleaned.csv`; no column name is invented and no values are shifted. The summary
@@ -170,7 +199,7 @@ from removing leading zeroes. Excel workbook output is outside this milestone.
 
 On 2026-11-24:
 
-- **33 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
+- **40 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
   both observed field layouts, reordered/extra columns, leading zeroes, spaces,
   quoted commas/doubled quotes, multiline and large cells, explicit encodings,
   missing/blank values, malformed widths, duplicate rows, unsafe headers, invalid
@@ -178,7 +207,14 @@ On 2026-11-24:
   protection, and CLI execution with site packages disabled. Regression checks
   also cover an entirely empty unnamed first column, header/value preservation,
   alignment of both manufacturer layouts, original source line numbers, and
-  rejection of populated unnamed columns or additional blank headers.
+  rejection of populated unnamed columns or additional blank headers. CSV syntax
+  diagnostics are checked for header errors, unterminated fields and multiline
+  record errors, including not exposing cell contents in those messages. The
+  explicit backslash-quote mode is checked with a synthetic version of the
+  16-column structure, multiline usage and an inch-mark-style quote; tests also
+  cover mixed quote styles, preservation of unrelated backslashes and literal
+  backslash-n text, unchanged source bytes, output round-trip values, and strict
+  rejection of malformed quoting with the option enabled.
 - The owner reported that a second export has an empty first column. Support for
   that structure was verified with synthetic data, including a UTF-8 BOM and
   multiline usage cells. That second real export is not available in this checkout
@@ -214,7 +250,7 @@ python -m venv .venv
 
 The Codex sandbox's default temporary directory was unavailable during validation.
 The latest successful full-suite run used
-`--basetemp=reports/pytest-leading-column-check` after
+`--basetemp=reports/pytest-quote-style-check-2` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 
