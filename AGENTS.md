@@ -23,6 +23,9 @@ CSV exports. Keep it substantially simpler than a Workspace reporting app.
   Missing entries remain blank; ambiguous entries are REVIEW. Keep original
   columns, usage labels and source provenance in the supporting sheets. Do not
   silently sum repeated labels or guess splits for new naming conventions.
+- The owner's usage-label rule assumes board/project names have no spaces.
+  Split at the first space; all remaining text before the final reference list
+  is the variant, including spaces and brackets. Preserve the original label.
 - Treat inputs and reports as confidential. Keep them in ignored `data/` and
   `reports/`; the original `example.csv` is also ignored. Commit only synthetic
   or explicitly sanitized fixtures. Never copy real values into docs or tests.

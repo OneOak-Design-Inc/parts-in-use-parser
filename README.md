@@ -243,14 +243,16 @@ The export's fourth numbered pair remains on **Source data**; populated overflow
 adds a warning. Comma-separated MPN cells remain intact. No preference ranking,
 identity matching, or deduplication is inferred.
 
-The usage split follows the supplied examples: the **final word** before the
-reference list is the variant, except a bracketed suffix such as
-`[No Variations]` stays together. All preceding text is the board name. Thus
-`Demo Control Board Default (R1,R2)` means board `Demo Control Board`, variant
-`Default`, and count 2. Board names can contain spaces. Unbracketed variant names
-containing spaces cannot be distinguished with this rule and require new examples
-and an explicit mapping rule before use. These names remain display labels, not
-verified Workspace project, release or revision identifiers.
+The owner specified on 2026-11-25 that **board/project names never contain
+spaces**. Split the usage label at its **first space**: the first word is the
+board name, and everything after it, before the final reference list, is the
+variant. Thus `Demo Production Build One (R1,R2)` means board `Demo`, variant
+`Production Build One`, and count 2. Multiword variants, their internal spacing,
+and bracketed values such as `[No Variations]` are preserved. A missing or
+whitespace-only variant is flagged. Board names containing spaces are outside
+this explicitly chosen rule. These names remain display labels, not verified
+Workspace project, release or revision identifiers. The rule is also recorded
+in `summary.json` under `excel.usage_label_rule`.
 
 Counts are the number of nonempty comma-separated reference tokens in one
 source row's board/variant entry. Surrounding whitespace in tokens is ignored
@@ -285,9 +287,9 @@ and in the CLI error/warning totals; error-severity issues produce exit code 2.
 
 ## Validation and remaining uncertainty
 
-On 2026-11-24:
+Validation record:
 
-- **61 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
+- **63 offline pytest cases passed on Python 3.12.14 / Windows on 2026-11-25.** Tests cover
   both observed field layouts, reordered/extra columns, leading zeroes, spaces,
   quoted commas/doubled quotes, multiline and large cells, explicit encodings,
   missing/blank values, malformed widths, duplicate rows, unsafe headers, invalid
@@ -303,7 +305,7 @@ On 2026-11-24:
   cover mixed quote styles, preservation of unrelated backslashes and literal
   backslash-n text, unchanged source bytes, output round-trip values, and strict
   rejection of malformed quoting with the option enabled. Excel tests cover
-  merged board/variant headers, multiword boards, bracketed variants, manufacturer
+  merged board/variant headers, multiword variants, bracketed variants, manufacturer
   mapping/overflow, numeric counts, missing versus zero, repeated/invalid usage,
   source traceability, text identifiers, literal leading `=`, CRLF preservation,
   more than 26 columns, cell limits, output protection, backslash-quoted input,
@@ -312,7 +314,9 @@ On 2026-11-24:
   from the wrapper, preserves original headers/cells, keeps numbered pairs, and
   produces Excel counts; unrecognized primary text is not guessed. The optional
   column case has been tested synthetically, not against the unavailable full
-  real export.
+  real export. Regression checks for the new first-space split verify that two
+  multiword variants share one merged board header, counts remain correct, and
+  original usage lines, internal variant spacing and parentheses are preserved.
 - The owner reported that a second export has an empty first column. Support for
   that structure was verified with synthetic data, including a UTF-8 BOM and
   multiline usage cells. That second real export is not available in this checkout
@@ -320,7 +324,8 @@ On 2026-11-24:
   CSV run with 209 source records, 215 manufacturer-field records, 1,432 usage
   label lines, zero errors and two warnings. These are user-reported results;
   the warnings and counts have not been independently compared with that file.
-- A synthetic three-part Excel example was generated locally. All three sheets
+- A synthetic three-part Excel example of the original layout was generated locally on
+  2026-11-24. All three sheets
   were rendered and visually reviewed with Artifact Tool. Merged ranges, numeric
   counts, text identifiers/leading zeroes, missing cells and freeze panes were
   independently read back with openpyxl (validation only, no runtime dependency).
@@ -328,7 +333,7 @@ On 2026-11-24:
   the delivered workbook's stored strings and types were verified separately.
   No native Excel application validation or full real-export Excel comparison
   has been performed.
-- **The supplied real sample ran on Python 3.14.6 with site packages disabled.**
+- **The supplied real sample ran on Python 3.14.6 with site packages disabled on 2026-11-24.**
   It produced two cleaned rows, three manufacturer-field records and nine usage
   label lines, with zero error issues and one ambiguous-MPN warning. There were
   no exact duplicate source rows. Source line ranges were 2–8 and 9–10.
@@ -359,7 +364,7 @@ python -m venv .venv
 
 The Codex sandbox's default temporary directory was unavailable during validation.
 The latest successful full-suite run used
-`--basetemp=reports/pytest-optional-manufacturer-check` after
+`--basetemp=reports/pytest-first-space-check` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 

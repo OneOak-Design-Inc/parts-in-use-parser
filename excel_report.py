@@ -24,12 +24,12 @@ class ReportError(ValueError):
 
 
 def split_usage_label(raw):
-    """Observed rule: final token or bracketed suffix is the variant."""
-    match = re.fullmatch(r"(.+) (\[[^\[\]]+\]|[^\s\[\]]+) \(([^()]*)\)", raw)
+    """Owner's rule: board names have no spaces; the remaining label is variant."""
+    match = re.fullmatch(r"(\S+) (.+) \(([^()]*)\)", raw)
     if not match:
         return None
     board, variant, ref_text = match.groups()
-    if not board.strip():
+    if not variant.strip():
         return None
     refs = [ref.strip() for ref in ref_text.split(",")]
     # No range expansion, DNP inference, deduplication or whitespace guessing.

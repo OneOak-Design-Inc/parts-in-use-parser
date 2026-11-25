@@ -40,23 +40,23 @@ def cells(content, sheet=1):
 
 def test_excel_groups_boards_variants_and_maps_manufacturers(tmp_path):
     source = source_csv(tmp_path, [{
-        "Used In": "Demo Control Board Alpha (C1,C2,C3)\nDemo Control Board Beta (C4)\n"
-                   "Other Board [No Variations] (C5,C6)",
+        "Used In": "Demo_Control_Board Alpha (C1,C2,C3)\nDemo_Control_Board Beta (C4)\n"
+                   "Other_Board [No Variations] (C5,C6)",
         "Manufacturer 1": "Example Second", "Manufacturer Part Number 1": "00003, 00004 ",
         "Manufacturer 2": "Example Third", "Manufacturer Part Number 2": "00005",
         "Manufacturer 3": "Example Fourth", "Manufacturer Part Number 3": "00006",
         "Manufacturer 4": "Example Overflow", "Manufacturer Part Number 4": "00007"}])
     parsed = parse_export(source)
     report = build_report(parsed)
-    assert report["columns"] == [("Demo Control Board", "Alpha"),
-                                  ("Demo Control Board", "Beta"), ("Other Board", "[No Variations]")]
+    assert report["columns"] == [("Demo_Control_Board", "Alpha"),
+                                  ("Demo_Control_Board", "Beta"), ("Other_Board", "[No Variations]")]
     assert report["matrix"][0] == ["00002", "Synthetic component", "Example Co", "Production", "00001",
                                    "Example Second", "00003, 00004 ", "Example Third", "00005",
                                    "Example Fourth", "00006", 3, 1, 2]
     content = workbook_bytes(report)
     root, main_cells = cells(content)
     assert [main_cells[f"{chr(65+i)}1"] for i in range(11)] == PART_HEADERS
-    assert main_cells["L1"] == "Demo Control Board"
+    assert main_cells["L1"] == "Demo_Control_Board"
     assert main_cells["L2"] == "Alpha" and main_cells["M2"] == "Beta"
     assert main_cells["L3"] == 3 and main_cells["N3"] == 2
     assert "M1" not in main_cells
@@ -112,9 +112,27 @@ def test_unrecognized_label_is_visible_and_preserved(tmp_path):
 
 def test_usage_count_whitespace_and_reference_text_preservation():
     assert split_usage_label("Demo Board Variant_A (R1, R2 ,R3)") == (
-        "Demo Board", "Variant_A", "R1, R2 ,R3", 3, "counted")
-    assert split_usage_label("Demo Board [No Variations] (C1)")[0:2] == ("Demo Board", "[No Variations]")
+        "Demo", "Board Variant_A", "R1, R2 ,R3", 3, "counted")
+    assert split_usage_label("Demo [No Variations] (C1)")[0:2] == ("Demo", "[No Variations]")
     assert split_usage_label("Demo (C1)") is None
+
+
+def test_first_space_split_groups_multiword_variants_under_one_board(tmp_path):
+    usage = "Demo Production Build One (R1,R2)\nDemo Production Build Two (R3)"
+    report = build_report(parse_export(source_csv(tmp_path, [{"Used In": usage}])))
+    assert report["columns"] == [("Demo", "Production Build One"), ("Demo", "Production Build Two")]
+    assert report["matrix"][0][-2:] == [2, 1]
+    assert [row[5] for row in report["details"]] == usage.split("\n")
+    root, values = cells(workbook_bytes(report))
+    assert values["L1"] == "Demo" and "M1" not in values
+    assert values["L2"] == "Production Build One" and values["M2"] == "Production Build Two"
+    assert "L1:M1" in {e.attrib["ref"] for e in root.findall(f"{{{NS}}}mergeCells/{{{NS}}}mergeCell")}
+
+
+def test_variant_spacing_and_parentheses_are_preserved():
+    assert split_usage_label("Demo Production  Build (Rev A) (R1)")[:2] == (
+        "Demo", "Production  Build (Rev A)")
+    assert split_usage_label("Demo   (R1)") is None
 
 
 def test_excel_literal_text_and_crlf_are_preserved(tmp_path):
@@ -137,6 +155,7 @@ def test_excel_mode_updates_summary_and_exit_status(tmp_path):
     summary = write_outputs(output, parsed, excel=True)
     assert (output / "parts_in_use.xlsx").is_file()
     assert summary["excel"]["variant_columns"] == 1
+    assert "first space" in summary["excel"]["usage_label_rule"]
     assert summary["counts"]["error_issues"] == 1
     assert parsed[-1]["counts"]["error_issues"] == original_errors == 0
     assert json.loads((output / "summary.json").read_text())["counts"]["error_issues"] == 1
@@ -175,7 +194,7 @@ def test_standard_library_only_excel_cli(tmp_path):
 
 
 def test_many_variants_extend_past_column_z(tmp_path):
-    usage = "\n".join(f"Demo Board Variant_{i} (R{i})" for i in range(30))
+    usage = "\n".join(f"Demo Variant_{i} (R{i})" for i in range(30))
     report = build_report(parse_export(source_csv(tmp_path, [{"Used In": usage}])))
     root, values = cells(workbook_bytes(report))
     assert values["AO2"] == "Variant_29" and values["AO3"] == 1

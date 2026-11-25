@@ -272,8 +272,9 @@ def write_outputs(output_dir, parsed, excel=False):
         summary["excel"] = {
             "file": "parts_in_use.xlsx", "board_count": len(report["boards"]),
             "variant_columns": len(report["columns"]), "part_rows": len(report["matrix"]),
-            "usage_label_rule": "Final token is variant; a final bracketed suffix stays together. "
-                                "All preceding text is the board name.",
+            "usage_label_rule": "Board names contain no spaces. Split at the first space: "
+                                "the first word is the board and all remaining label text "
+                                "before the reference list is the variant.",
             "manufacturer_mapping": "Primary wrapper -> pair 1; export numbered pairs 1-3 -> "
                                     "pairs 2-4. Export pair 4 retained in Source data.",
             "counts": "Comma-separated reference tokens per source row and exact board/variant "
