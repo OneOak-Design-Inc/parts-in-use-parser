@@ -200,3 +200,23 @@ def test_excel_with_backslash_quote_option_preserves_description(tmp_path):
     _, values = cells((output / "parts_in_use.xlsx").read_bytes())
     assert values["B3"] == 'Synthetic 0.200" connector, demo'
     assert values["L3"] == 1
+
+
+def test_excel_extracts_primary_without_a_separate_manufacturer_column(tmp_path):
+    source = tmp_path / "synthetic.csv"
+    headers = [""] + [h for h in KNOWN if h != "Manufacturer"]
+    values = {"Manufacturer Part Number": "part: 00001, manufacturer: Example Components",
+              "CPN": "00002", "Description": "Synthetic part", "Lifecycle": "Production",
+              "Used In": "Demo Board Default (C1,C2)"}
+    with source.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(headers)
+        writer.writerow([values.get(h, "") for h in headers])
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output), "--excel"]) == 0
+    content = (output / "parts_in_use.xlsx").read_bytes()
+    _, report = cells(content)
+    assert report["C3"] == "Example Components" and report["E3"] == "00001"
+    assert report["L3"] == 2
+    _, original = cells(content, 3)
+    assert "Manufacturer" not in original.values()

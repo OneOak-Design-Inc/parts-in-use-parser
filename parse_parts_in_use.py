@@ -16,6 +16,7 @@ from excel_report import ReportError, build_report, workbook_bytes
 
 CORE = ["Manufacturer Part Number", "Manufacturer", "CPN", "Used In",
         "Description", "Lifecycle"]
+REQUIRED_HEADERS = [name for name in CORE if name != "Manufacturer"]
 PAIRS = [(f"Manufacturer {i}", f"Manufacturer Part Number {i}")
          for i in range(1, 5)]
 KNOWN = CORE + [name for pair in PAIRS for name in pair]
@@ -94,7 +95,7 @@ def parse_export(source, encoding="utf-8-sig", backslash_escaped_quotes=False):
         raise InputError("Duplicate column headers; cannot assign values safely.")
     if any(h.startswith(PREFIX) for h in headers):
         raise InputError(f"Source header uses reserved prefix {PREFIX!r}.")
-    missing_headers = [h for h in CORE if h not in headers]
+    missing_headers = [h for h in REQUIRED_HEADERS if h not in headers]
     if missing_headers:
         raise InputError("Missing observed headers: " + ", ".join(missing_headers)
                          + ". Expected comma-delimited CSV with exact header names.")
@@ -114,9 +115,10 @@ def parse_export(source, encoding="utf-8-sig", backslash_escaped_quotes=False):
     unexpected = [h for h in named_headers if h not in KNOWN]
     if unexpected:
         issue("unexpected_columns_preserved", columns=unexpected)
-    absent_pairs = [h for pair in PAIRS for h in pair if h not in headers]
-    if absent_pairs:
-        issue("optional_columns_absent", severity="info", columns=absent_pairs)
+    absent_optional = [h for h in ["Manufacturer"] + [name for pair in PAIRS for name in pair]
+                       if h not in headers]
+    if absent_optional:
+        issue("optional_columns_absent", severity="info", columns=absent_optional)
 
     records, manufacturer_fields, usage = [], [], []
     empty = Counter({h: 0 for h in headers})
@@ -236,7 +238,7 @@ def parse_export(source, encoding="utf-8-sig", backslash_escaped_quotes=False):
                    "warning_issues": sum(i["severity"] == "warning" for i in issues)},
         "empty_cells_by_column": dict(empty), "absent_cells_by_column": dict(absent),
         "whitespace_only_cells_by_column": dict(whitespace),
-        "unexpected_columns": unexpected, "absent_optional_columns": absent_pairs,
+        "unexpected_columns": unexpected, "absent_optional_columns": absent_optional,
         "exact_duplicate_groups": list(duplicate_groups.values()), "issues": issues,
         "interpretation": {
             "normalization": "None: no case folding, trimming, MPN splitting, or identity matching. "

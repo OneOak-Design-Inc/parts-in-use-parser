@@ -170,7 +170,13 @@ headers, and uses the empty string key (`""`) for that column's cell counts.
 Any data in that unnamed column, including whitespace, fails before outputs are
 written and identifies the physical line. Other blank headers, duplicate headers,
 missing required headers, or headers beginning with `__piu_` fail explicitly.
-The six unnumbered headers are required. Numbered pairs
+The five unnumbered headers other than `Manufacturer` are required. The separate
+`Manufacturer` column is optional: both the primary manufacturer and MPN come
+from the `manufacturer:` and `part:` values in `Manufacturer Part Number`.
+No missing source column is synthesized. If a separate manufacturer column is
+present, its original values remain available and conflicts are still reported.
+Its absence is recorded in `absent_optional_columns`, without an error or warning.
+Numbered pairs
 1–4 may be absent and are reported; later/unrecognized columns are preserved but
 not interpreted. Missing cell counts do not claim that an entire column's absence
 was an empty value. Format newline counters in the summary include quoted cells.
@@ -281,7 +287,7 @@ and in the CLI error/warning totals; error-severity issues produce exit code 2.
 
 On 2026-11-24:
 
-- **58 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
+- **61 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
   both observed field layouts, reordered/extra columns, leading zeroes, spaces,
   quoted commas/doubled quotes, multiline and large cells, explicit encodings,
   missing/blank values, malformed widths, duplicate rows, unsafe headers, invalid
@@ -301,7 +307,12 @@ On 2026-11-24:
   mapping/overflow, numeric counts, missing versus zero, repeated/invalid usage,
   source traceability, text identifiers, literal leading `=`, CRLF preservation,
   more than 26 columns, cell limits, output protection, backslash-quoted input,
-  and execution with site packages disabled.
+  and execution with site packages disabled. Regression tests also verify that
+  omitting the separate `Manufacturer` column still extracts both primary values
+  from the wrapper, preserves original headers/cells, keeps numbered pairs, and
+  produces Excel counts; unrecognized primary text is not guessed. The optional
+  column case has been tested synthetically, not against the unavailable full
+  real export.
 - The owner reported that a second export has an empty first column. Support for
   that structure was verified with synthetic data, including a UTF-8 BOM and
   multiline usage cells. That second real export is not available in this checkout
@@ -348,7 +359,7 @@ python -m venv .venv
 
 The Codex sandbox's default temporary directory was unavailable during validation.
 The latest successful full-suite run used
-`--basetemp=reports/pytest-excel-check-4` after
+`--basetemp=reports/pytest-optional-manufacturer-check` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 

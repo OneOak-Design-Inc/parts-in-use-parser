@@ -303,6 +303,38 @@ def test_manufacturer_conflict_is_explicit(tmp_path):
     assert parsed[2][0]["manufacturer_text"] == "Example Co"
 
 
+def test_separate_manufacturer_column_is_optional_and_not_synthesized(tmp_path):
+    headers = [h for h in KNOWN if h != "Manufacturer"]
+    values = dict(zip(CORE, primary(mpn="000123", manufacturer="Example Components")))
+    values.update({"Manufacturer 1": "Example Alternate", "Manufacturer Part Number 1": "000456"})
+    source = make_csv(tmp_path, [[values.get(h, "") for h in headers]], headers)
+    before = source.read_bytes()
+    parsed = parse_export(source)
+    assert parsed[2][0]["manufacturer_text"] == "Example Components"
+    assert parsed[2][0]["mpn_text"] == "000123"
+    assert parsed[2][0]["manufacturer_cell_raw"] == ""
+    assert parsed[2][1]["manufacturer_text"] == "Example Alternate"
+    assert parsed[-1]["absent_optional_columns"] == ["Manufacturer"]
+    assert parsed[-1]["counts"]["error_issues"] == 0
+    output = tmp_path / "out"
+    summary = write_outputs(output, parsed)
+    cleaned = read_csv(output / "cleaned.csv")
+    assert "Manufacturer" not in cleaned[0]
+    assert [cleaned[0][h] for h in headers] == [values.get(h, "") for h in headers]
+    assert summary["counts"]["error_issues"] == 0
+    assert source.read_bytes() == before
+
+
+def test_missing_separate_manufacturer_does_not_guess_unrecognized_primary(tmp_path):
+    headers = [h for h in CORE if h != "Manufacturer"]
+    values = dict(zip(CORE, primary()))
+    values["Manufacturer Part Number"] = "000123"
+    parsed = parse_export(make_csv(tmp_path, [[values[h] for h in headers]], headers))
+    assert parsed[2][0]["manufacturer_text"] == parsed[2][0]["mpn_text"] == ""
+    assert parsed[2][0]["mpn_cell_raw"] == "000123"
+    assert parsed[-1]["counts"]["error_issues"] == 1
+
+
 @pytest.mark.parametrize("manufacturer,mpn", [("Example", ""), ("", "00001")])
 def test_incomplete_numbered_pair(tmp_path, manufacturer, mpn):
     source = make_csv(tmp_path, [primary() + [manufacturer, mpn]], CORE + KNOWN[6:8])
