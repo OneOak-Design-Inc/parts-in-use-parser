@@ -227,6 +227,9 @@ Manufacturer 2, MPN 2, Manufacturer 3, MPN 3, Manufacturer 4, MPN 4
 Each board name is merged across its variant columns in the first header row;
 variants are in the second row. The fixed column headings span both header rows.
 Header rows and the first two identifying columns remain visible when scrolling.
+Alternating row fills extend across the full data width, including numeric usage
+counts and blank cells. Thin vertical separators distinguish columns; REVIEW
+cells retain their warning highlight. Styled blanks remain empty, not zero.
 Board/variant groups follow first appearance in the export. Each source record
 has its own report row: duplicate CPNs or repeated source rows are not merged.
 
@@ -317,6 +320,12 @@ Validation record:
   real export. Regression checks for the new first-space split verify that two
   multiword variants share one merged board header, counts remain correct, and
   original usage lines, internal variant spacing and parentheses are preserved.
+  Saved workbook checks also verify that row fills extend through numeric and
+  empty usage cells, with vertical column borders and no invented zero values.
+- On 2026-11-25, the full-width banding and column separators were visually checked
+  on all three sheets of a synthetic workbook. An independent openpyxl read-back
+  confirmed fills, borders, blank values, numeric counts, text identifiers and
+  merged headers. Native Excel validation remains outstanding.
 - The owner reported that a second export has an empty first column. Support for
   that structure was verified with synthetic data, including a UTF-8 BOM and
   multiline usage cells. That second real export is not available in this checkout
@@ -364,7 +373,7 @@ python -m venv .venv
 
 The Codex sandbox's default temporary directory was unavailable during validation.
 The latest successful full-suite run used
-`--basetemp=reports/pytest-first-space-check` after
+`--basetemp=reports/pytest-banding-check` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 

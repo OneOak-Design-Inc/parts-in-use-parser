@@ -148,21 +148,26 @@ def styles_xml():
         if color:
             element(pattern_fill, "fgColor", {"rgb": "FF" + color})
             element(pattern_fill, "bgColor", {"indexed": "64"})
-    borders = element(root, "borders", {"count": "1"})
-    border = element(borders, "border")
-    for edge in ("left", "right", "top", "bottom", "diagonal"):
-        element(border, edge)
+    borders = element(root, "borders", {"count": "3"})
+    for color in (None, "D5DDE7", "FFFFFF"):
+        border = element(borders, "border")
+        for edge in ("left", "right", "top", "bottom", "diagonal"):
+            attrs = {"style": "thin"} if edge == "right" and color else {}
+            side = element(border, edge, attrs)
+            if attrs:
+                element(side, "color", {"rgb": "FF" + color})
     base = element(root, "cellStyleXfs", {"count": "1"})
     element(base, "xf", {"numFmtId": "0", "fontId": "0", "fillId": "0", "borderId": "0"})
-    xfs = element(root, "cellXfs", {"count": "7"})
-    # Default text, two header bands, text body, alternate body, integer, review.
-    for font, fill, num_format, align in [(0, 0, 49, "left"), (1, 2, 49, "center"),
-                                         (1, 3, 49, "center"), (0, 0, 49, "left"),
-                                         (0, 4, 49, "left"), (0, 0, 3, "right"),
-                                         (2, 5, 49, "center")]:
+    xfs = element(root, "cellXfs", {"count": "8"})
+    # Keep text and integer styles separate so banding does not change cell types.
+    for font, fill, num_format, align, border in [(0, 0, 49, "left", 0), (1, 2, 49, "center", 2),
+                                                 (1, 3, 49, "center", 2), (0, 0, 49, "left", 1),
+                                                 (0, 4, 49, "left", 1), (0, 0, 3, "right", 1),
+                                                 (2, 5, 49, "center", 1), (0, 4, 3, "right", 1)]:
         xf = element(xfs, "xf", {"fontId": str(font), "fillId": str(fill),
-                               "borderId": "0", "numFmtId": str(num_format),
-                               "xfId": "0", "applyAlignment": "1", "applyNumberFormat": "1"})
+                               "borderId": str(border), "numFmtId": str(num_format),
+                               "xfId": "0", "applyAlignment": "1", "applyNumberFormat": "1",
+                               "applyBorder": "1"})
         element(xf, "alignment", {"horizontal": align, "vertical": "center", "wrapText": "1"})
     styles = element(root, "cellStyles", {"count": "1"})
     element(styles, "cellStyle", {"name": "Normal", "xfId": "0", "builtinId": "0"})
@@ -198,13 +203,18 @@ def worksheet_xml(rows, widths, header_rows=1, merges=(), freeze_columns=0):
             height = min(409, max(24, lines * 13 + 8))
         row = element(data, "row", {"r": str(row_number), "ht": str(height), "customHeight": "1"})
         for index, value in enumerate(values, 1):
-            if value is None:
+            if value is None and row_number <= header_rows:
                 continue
             address = f"{column_name(index)}{row_number}"
             style = (1 if row_number == 1 else 2) if row_number <= header_rows else (
-                6 if value == "REVIEW" else 5 if isinstance(value, int) else 4 if row_number % 2 else 3)
-            cell = element(row, "c", {"r": address, "s": str(style),
-                                      "t": "n" if isinstance(value, int) else "inlineStr"})
+                6 if value == "REVIEW" else (7 if row_number % 2 else 5) if isinstance(value, int)
+                else 4 if row_number % 2 else 3)
+            attrs = {"r": address, "s": str(style)}
+            if value is not None:
+                attrs["t"] = "n" if isinstance(value, int) else "inlineStr"
+            cell = element(row, "c", attrs)
+            if value is None:
+                continue  # Style missing usage without writing zero or an empty-string value.
             if isinstance(value, int):
                 element(cell, "v", text=str(value))
             else:

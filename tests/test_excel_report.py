@@ -34,6 +34,8 @@ def cells(content, sheet=1):
     for cell in root.findall(f".//{{{NS}}}c"):
         text = cell.find(f"{{{NS}}}is/{{{NS}}}t")
         number = cell.find(f"{{{NS}}}v")
+        if text is None and number is None:
+            continue  # A styled blank still has no value.
         values[cell.attrib["r"]] = (text.text or "") if text is not None else int(number.text)
     return root, values
 
@@ -79,9 +81,21 @@ def test_missing_usage_is_blank_and_duplicate_source_parts_stay_separate(tmp_pat
     report = build_report(parse_export(source))
     assert len(report["matrix"]) == 3
     assert [r[-1] for r in report["matrix"]] == [2, None, 2]
-    _, values = cells(workbook_bytes(report))
+    content = workbook_bytes(report)
+    root, values = cells(content)
     assert values["L3"] == 2 and "L4" not in values and values["L5"] == 2
     assert values["A3"] == values["A4"] == values["A5"] == "00002"
+    with ZipFile(io.BytesIO(content)) as archive:
+        style_root = ET.fromstring(archive.read("xl/styles.xml"))
+    xfs = list(style_root.find(f"{{{NS}}}cellXfs"))
+    borders = list(style_root.find(f"{{{NS}}}borders"))
+    cell_styles = {c.attrib["r"]: xfs[int(c.attrib["s"])] for c in root.findall(f".//{{{NS}}}c")}
+    assert cell_styles["A3"].attrib["fillId"] == cell_styles["L3"].attrib["fillId"]
+    assert cell_styles["A4"].attrib["fillId"] == cell_styles["L4"].attrib["fillId"]
+    assert cell_styles["L3"].attrib["fillId"] != cell_styles["L4"].attrib["fillId"]
+    for address in ("A3", "L3", "A4", "L4", "L5"):
+        border = borders[int(cell_styles[address].attrib["borderId"])]
+        assert border.find(f"{{{NS}}}right").attrib["style"] == "thin"
 
 
 @pytest.mark.parametrize("refs", ["", "R1,,R2", "R1,R1", "R1 R2"])
