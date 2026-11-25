@@ -43,7 +43,11 @@ def parse_export(source, encoding="utf-8-sig"):
         raise InputError("Input is empty.") from exc
     except csv.Error as exc:
         raise InputError(f"Invalid CSV header at physical line {reader.line_num}.") from exc
-    if not headers or any(not h.strip() for h in headers):
+    # The owner confirmed an export with an entirely empty first column.
+    # Keep its blank header and cells; never assign it an invented meaning.
+    empty_leading_column = bool(headers) and headers[0] == ""
+    named_headers = headers[1:] if empty_leading_column else headers
+    if not headers or any(not h.strip() for h in named_headers):
         raise InputError("Blank column header; cannot assign values safely.")
     if len(set(headers)) != len(headers):
         raise InputError("Duplicate column headers; cannot assign values safely.")
@@ -64,7 +68,9 @@ def parse_export(source, encoding="utf-8-sig"):
                          source_line_end=record["source_line_end"])
         issues.append(entry)
 
-    unexpected = [h for h in headers if h not in KNOWN]
+    if empty_leading_column:
+        issue("empty_leading_column_preserved", severity="info", source_column_number=1)
+    unexpected = [h for h in named_headers if h not in KNOWN]
     if unexpected:
         issue("unexpected_columns_preserved", columns=unexpected)
     absent_pairs = [h for pair in PAIRS for h in pair if h not in headers]
@@ -87,6 +93,10 @@ def parse_export(source, encoding="utf-8-sig"):
             raise InputError(f"Invalid CSV in record beginning at physical line {start}; "
                              f"reader stopped at line {reader.line_num}. "
                              "Cannot safely recover record boundaries; no outputs written.") from exc
+        if empty_leading_column and fields and fields[0] != "":
+            raise InputError(f"Unnamed first column contains data in the record beginning "
+                             f"at physical line {start}. Only an entirely empty unnamed "
+                             "first column is supported; no outputs written.")
         record = {"source_record": len(records) + 1, "source_line_start": start,
                   "source_line_end": reader.line_num, "fields": fields}
         records.append(record)

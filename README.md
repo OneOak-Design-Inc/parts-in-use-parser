@@ -131,8 +131,15 @@ Exit codes:
   Quoting errors are not recovered by guessing row boundaries. A filesystem error
   during output writing can leave partial outputs; use a fresh directory to retry.
 
-Missing required headers, duplicate/blank headers, or headers beginning with
-`__piu_` fail explicitly. The six unnumbered headers are required. Numbered pairs
+An unnamed first column is accepted only when every present cell in that column
+is exactly empty. Its original blank header and empty cells remain in
+`cleaned.csv`; no column name is invented and no values are shifted. The summary
+records `empty_leading_column_preserved`, retains the blank entry in source
+headers, and uses the empty string key (`""`) for that column's cell counts.
+Any data in that unnamed column, including whitespace, fails before outputs are
+written and identifies the physical line. Other blank headers, duplicate headers,
+missing required headers, or headers beginning with `__piu_` fail explicitly.
+The six unnumbered headers are required. Numbered pairs
 1–4 may be absent and are reported; later/unrecognized columns are preserved but
 not interpreted. Missing cell counts do not claim that an entire column's absence
 was an empty value. Format newline counters in the summary include quoted cells.
@@ -163,12 +170,19 @@ from removing leading zeroes. Excel workbook output is outside this milestone.
 
 On 2026-11-24:
 
-- **27 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
+- **33 offline pytest cases passed on Python 3.12.14 / Windows.** Tests cover
   both observed field layouts, reordered/extra columns, leading zeroes, spaces,
   quoted commas/doubled quotes, multiline and large cells, explicit encodings,
   missing/blank values, malformed widths, duplicate rows, unsafe headers, invalid
   decoding/quoting, manufacturer conflicts, incomplete pairs, source/output
-  protection, and CLI execution with site packages disabled.
+  protection, and CLI execution with site packages disabled. Regression checks
+  also cover an entirely empty unnamed first column, header/value preservation,
+  alignment of both manufacturer layouts, original source line numbers, and
+  rejection of populated unnamed columns or additional blank headers.
+- The owner reported that a second export has an empty first column. Support for
+  that structure was verified with synthetic data, including a UTF-8 BOM and
+  multiline usage cells. That second real export is not available in this checkout
+  and has not yet been rerun here.
 - **The supplied real sample ran on Python 3.14.6 with site packages disabled.**
   It produced two cleaned rows, three manufacturer-field records and nine usage
   label lines, with zero error issues and one ambiguous-MPN warning. There were
@@ -199,7 +213,8 @@ python -m venv .venv
 ```
 
 The Codex sandbox's default temporary directory was unavailable during validation.
-The successful full-suite run used `--basetemp=reports/pytest-check-2` after
+The latest successful full-suite run used
+`--basetemp=reports/pytest-leading-column-check` after
 creating `reports/`. If needed, choose a disposable test directory under this
 repository with an existing parent; pytest deletes its basetemp on reuse.
 

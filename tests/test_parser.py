@@ -85,11 +85,52 @@ def test_invalid_encoding_is_fatal(tmp_path):
         parse_export(source)
 
 
-@pytest.mark.parametrize("headers", [[], [""], CORE + [CORE[0]], CORE[:-1], CORE + ["__piu_test"]])
+@pytest.mark.parametrize("headers", [[], [""], CORE + [CORE[0]], CORE[:-1],
+                                     CORE + ["__piu_test"], CORE + [""],
+                                     ["", ""] + CORE, [" "] + CORE])
 def test_unsafe_headers_are_rejected(tmp_path, headers):
     source = make_csv(tmp_path, [], headers)
     with pytest.raises(InputError):
         parse_export(source)
+
+
+def test_empty_unnamed_first_column_preserves_alignment_and_source(tmp_path):
+    headers = [""] + KNOWN
+    rows = [[""] + primary(used_in="Demo A (R1)\nDemo B (R2)") + [""] * 8,
+            [""] + ["", "", "00003", "Demo C (R3)", "", "Unknown"]
+            + ["Example Devices", "000004"] + [""] * 6]
+    source = make_csv(tmp_path, rows, headers, encoding="utf-8-sig")
+    before = source.read_bytes()
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output)]) == 0
+    assert source.read_bytes() == before
+    with (output / "cleaned.csv").open(encoding="utf-8", newline="") as stream:
+        cleaned = list(csv.reader(stream))
+    assert cleaned[0][5:] == headers
+    assert [row[5:] for row in cleaned[1:]] == rows
+    assert cleaned[1][1:3] == ["2", "3"]
+    assert cleaned[2][1:3] == ["4", "4"]
+    manufacturers = read_csv(output / "manufacturer_fields.csv")
+    assert [(r["CPN"], r["mpn_text"]) for r in manufacturers] == [
+        ("00002", "0001"), ("00003", "000004")]
+    assert len(read_csv(output / "usage.csv")) == 3
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert summary["source"]["headers"] == headers
+    assert summary["empty_cells_by_column"][""] == 2
+    assert summary["unexpected_columns"] == []
+    assert summary["issues"] == [{"code": "empty_leading_column_preserved",
+                                  "severity": "info", "source_column_number": 1}]
+
+
+@pytest.mark.parametrize("unnamed_value", ["00001", " "])
+def test_unnamed_first_column_with_data_fails_before_outputs(tmp_path, capsys, unnamed_value):
+    source = make_csv(tmp_path, [[""] + primary(), [unnamed_value] + primary()], [""] + CORE)
+    before = source.read_bytes()
+    output = tmp_path / "out"
+    assert main([str(source), "--output-dir", str(output)]) == 1
+    assert "physical line 3" in capsys.readouterr().err
+    assert not output.exists()
+    assert source.read_bytes() == before
 
 
 def test_empty_file(tmp_path):
